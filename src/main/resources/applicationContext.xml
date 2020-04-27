@@ -1,0 +1,128 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--配置文件头部引入所使用到的标签的命名空间-->
+<beans xmlns="http://www.springframework.org/schema/beans"
+       xmlns:context="http://www.springframework.org/schema/context"
+       xmlns:aop="http://www.springframework.org/schema/aop"
+       xmlns:tx="http://www.springframework.org/schema/tx"
+       xmlns:mvc="http://www.springframework.org/schema/mvc"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xsi:schemaLocation="http://www.springframework.org/schema/beans
+        http://www.springframework.org/schema/beans/spring-beans.xsd
+        http://www.springframework.org/schema/context
+        http://www.springframework.org/schema/context/spring-context.xsd
+        http://www.springframework.org/schema/aop
+        http://www.springframework.org/schema/aop/spring-aop.xsd
+        http://www.springframework.org/schema/tx
+        http://www.springframework.org/schema/tx/spring-tx.xsd
+        http://www.springframework.org/schema/mvc
+        http://www.springframework.org/schema/mvc/spring-mvc.xsd">
+
+    <!--引入外部datasource配置文件-->
+    <bean id="propertyConfig" class="org.springframework.beans.factory.config.PropertyPlaceholderConfigurer">
+        <property name="locations">
+            <list>
+                <value>classpath:dbconfig.properties</value>
+            </list>
+        </property>
+    </bean>
+
+    <!--
+        若把应用拆分成多个spring模块来写，则在本模块中必须使用import标签把所依赖的其他模块的spring配置文件导入进来，
+        否则启动应用的时候会出现创建spring bean失败。相当于是把依赖的其他模块的spring配置文件中的内容导入整合到一个
+        spring文件里面。若只是单个spring模块则不用写import标签
+        <import resource="spring-biz.xml"/>
+    -->
+    <!--
+        context:component-scan 标签作用
+        在Spring IOC容器初始化过程中，自动创建并管理com.puhj.ssmdemo包及子包中拥有一下注解的对象：
+        @Repository
+        @Service
+        @Controller
+        @Component
+    -->
+    <context:component-scan base-package="com.puhj.ssmdemo"/>
+    <!--开启aop:aspectj自动扫描-->
+    <aop:aspectj-autoproxy/>
+    <!--启用Spring MVC的注解开发模式，即可以使用@RequestingMapping等注解-->
+    <mvc:annotation-driven>
+        <mvc:message-converters>
+            <bean class="org.springframework.http.converter.StringHttpMessageConverter">
+                <property name="supportedMediaTypes">
+                    <list>
+                        <!--
+                            处理响应输出乱码
+                            response.setContentType("text/html;charset=utf-8")
+                        -->
+                        <value>text/html;charset=utf-8</value>
+                    </list>
+                </property>
+            </bean>
+        </mvc:message-converters>
+    </mvc:annotation-driven>
+    <!--
+        将图片/js/css等静态资源排除在外，可提高执行效率.如：来了一个图片资源的请求要展示页面上的图片，
+        这类请求就不让DispatcherServlet拦截了
+    -->
+    <mvc:default-servlet-handler/>
+    <!--数据源配置-->
+    <bean id="dataSource" class="org.springframework.jdbc.datasource.DriverManagerDataSource">
+        <property name="driverClassName" value="${jdbc.driver}"/>
+        <property name="url" value="${jdbc.url}"/>
+        <property name="username" value="${jdbc.username}"/>
+        <property name="password" value="${jdbc.password}"/>
+    </bean>
+    <!--Mybatis的sqlSessionFactory工厂配置-->
+    <bean id="sqlSessionFactory" class="org.mybatis.spring.SqlSessionFactoryBean">
+        <!--配置sqlSessionFactory使用的数据源-->
+        <property name="dataSource" ref="dataSource"/>
+        <!--配置mapper映射文件路径：和实际路径保持一致-->
+        <property name="mapperLocations" value="classpath:com/puhj/ssmdemo/dao/*.xml"/>
+        <!--配置实体类包路径：让mapper文件中的类型可以使用简写，即不用把实体类完整路径写出来-->
+        <property name="typeAliasesPackage" value="com.puhj.ssmdemo.entity"/>
+    </bean>
+    <!--Mybatis持久化对象配置-->
+    <bean class="org.mybatis.spring.mapper.MapperScannerConfigurer">
+        <property name="basePackage" value="com.puhj.ssmdemo.dao"/>
+        <property name="sqlSessionFactoryBeanName" value="sqlSessionFactory"/>
+    </bean>
+    <!--声明试事物-->
+    <!--事物管理器-->
+    <bean id="transcationManager" class="org.springframework.jdbc.datasource.DataSourceTransactionManager">
+        <property name="dataSource" ref="dataSource"/>
+    </bean>
+    <!--通知-->
+    <tx:advice id="txAdvice" transaction-manager="transcationManager">
+        <tx:attributes>
+            <tx:method name="get*" read-only="true"/>
+            <tx:method name="find*" read-only="true"/>
+            <tx:method name="search*" read-only="true"/>
+            <tx:method name="*" propagation="REQUIRED"/>
+        </tx:attributes>
+    </tx:advice>
+    <!--植入-->
+    <aop:config>
+        <!--配置切入点为com.puhj.ssmdemo.service包下的任意类里的任意方法并且任意参数-->
+        <aop:pointcut id="txPointcut" expression="execution(* com.puhj.ssmdemo.service.*.*(..))"/>
+        <aop:advisor advice-ref="txAdvice" pointcut-ref="txPointcut"/>
+    </aop:config>
+    <!--
+        配置视图转换器，比如访问login.jsp页面，只需要写login，
+        前缀和后缀都在bean里面的prefix和suffix属性配置好了
+    -->
+    <bean class="org.springframework.web.servlet.view.InternalResourceViewResolver">
+        <property name="viewClass" value="org.springframework.web.servlet.view.JstlView"/>
+        <property name="prefix" value="/WEB-INF/pages/"/>
+        <property name="suffix" value=".jsp"/>
+    </bean>
+    <!--
+        配置SpringMVC自带的登陆拦截器对登陆请求过滤，效果和Filter一样：
+        使用自定义类LoginInterceptor并且实现接口HandlerInterceptor来处理请求拦截
+    -->
+    <!--<mvc:interceptors>
+        <mvc:interceptor>
+            &lt;!&ndash;/**为拦截所有请求&ndash;&gt;
+            <mvc:mapping path="/**"/>
+            <bean class="com.puhj.ssmdemo.global.LoginInterceptor"/>
+        </mvc:interceptor>
+    </mvc:interceptors>-->
+</beans>
